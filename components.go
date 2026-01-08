@@ -271,6 +271,8 @@ type SelectMenu struct {
 	// Unique identifier for the component; auto populated through increment if not provided.
 	ID int `json:"id,omitempty"`
 
+	// Only available for String Selects in modals. It is ignored in messages.
+	Required *bool `json:"required,omitempty"`
 	// List of values that is only populated when receiving an interaction response; do not fill this manually.
 	Values []string `json:"values,omitempty"`
 }
@@ -298,14 +300,18 @@ func (s SelectMenu) MarshalJSON() ([]byte, error) {
 
 // TextInput represents text input component.
 type TextInput struct {
-	CustomID    string         `json:"custom_id"`
-	Label       string         `json:"label"`
+	CustomID string `json:"custom_id"`
+
+	// Deprecated in favor of label and description on the Label component.
+	Label       string         `json:"label,omitempty"`
 	Style       TextInputStyle `json:"style"`
 	Placeholder string         `json:"placeholder,omitempty"`
 	Value       string         `json:"value,omitempty"`
-	Required    bool           `json:"required"`
-	MinLength   int            `json:"min_length,omitempty"`
-	MaxLength   int            `json:"max_length,omitempty"`
+
+	// Default to true
+	Required  *bool `json:"required,omitempty"`
+	MinLength int   `json:"min_length,omitempty"`
+	MaxLength int   `json:"max_length,omitempty"`
 
 	// Unique identifier for the component; auto populated through increment if not provided.
 	ID int `json:"id,omitempty"`
