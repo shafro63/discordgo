@@ -237,6 +237,7 @@ func (s *Session) RequestWithLockedBucket(method, urlStr, contentType string, b 
 		bucket.Release(nil)
 		return
 	}
+	receivedAt := time.Now()
 	defer func() {
 		err2 := resp.Body.Close()
 		if s.Debug && err2 != nil {
@@ -247,6 +248,12 @@ func (s *Session) RequestWithLockedBucket(method, urlStr, contentType string, b 
 	err = bucket.Release(resp.Header)
 	if err != nil {
 		return
+	}
+
+	// Register the Discord bucket hash so future requests to different URLs
+	// sharing the same hash reuse the same Bucket object.
+	if bucket.discordBucketID != "" {
+		s.Ratelimiter.RegisterBucketHash(bucket.Key, bucket.discordBucketID)
 	}
 
 	response, err = ioutil.ReadAll(resp.Body)
@@ -292,11 +299,13 @@ func (s *Session) RequestWithLockedBucket(method, urlStr, contentType string, b 
 
 		if cfg.ShouldRetryOnRateLimit {
 			s.log(LogInformational, "Rate Limiting %s, retry in %v", urlStr, rl.RetryAfter)
-			s.handleEvent(rateLimitEventType, &RateLimit{TooManyRequests: &rl, URL: urlStr})
+			s.handleEvent(rateLimitEventType, &RateLimit{TooManyRequests: &rl, URL: urlStr, Scope: resp.Header.Get("X-RateLimit-Scope")})
 
-			time.Sleep(rl.RetryAfter)
-			// we can make the above smarter
-			// this method can cause longer delays than required
+			// Subtract time already spent processing the response so we don't
+			// overshoot the retry window.
+			if wait := time.Until(receivedAt.Add(rl.RetryAfter)); wait > 0 {
+				time.Sleep(wait)
+			}
 
 			response, err = s.RequestWithLockedBucket(method, urlStr, contentType, b, s.Ratelimiter.LockBucketObject(bucket), sequence, options...)
 		} else {

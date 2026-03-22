@@ -18,6 +18,7 @@ func TestRatelimitReset(t *testing.T) {
 		headers := http.Header(make(map[string][]string))
 
 		headers.Set("X-RateLimit-Remaining", "0")
+		headers.Set("X-RateLimit-Limit", "5")
 		// Reset for approx 2 seconds from now
 		headers.Set("X-RateLimit-Reset", fmt.Sprint(float64(time.Now().Add(time.Second*2).UnixNano())/1e9))
 		headers.Set("Date", time.Now().Format(time.RFC850))
@@ -81,6 +82,79 @@ func TestRatelimitGlobal(t *testing.T) {
 	}
 }
 
+// TestRatelimitLimitHeader verifies that X-RateLimit-Limit is parsed and stored on the Bucket.
+func TestRatelimitLimitHeader(t *testing.T) {
+	rl := NewRatelimiter()
+	bucket := rl.LockBucket("/guilds/99/channels")
+
+	headers := http.Header(make(map[string][]string))
+	headers.Set("X-RateLimit-Remaining", "4")
+	headers.Set("X-RateLimit-Limit", "5")
+	headers.Set("X-RateLimit-Reset", fmt.Sprint(float64(time.Now().Add(time.Second).UnixNano())/1e9))
+	headers.Set("Date", time.Now().Format(time.RFC850))
+
+	if err := bucket.Release(headers); err != nil {
+		t.Fatalf("Release returned error: %v", err)
+	}
+
+	if bucket.Limit != 5 {
+		t.Errorf("expected Limit=5, got %d", bucket.Limit)
+	}
+}
+
+// TestRatelimitScopeHeader verifies that X-RateLimit-Scope is stored on the Bucket.
+func TestRatelimitScopeHeader(t *testing.T) {
+	rl := NewRatelimiter()
+	bucket := rl.LockBucket("/guilds/99/channels")
+
+	headers := http.Header(make(map[string][]string))
+	headers.Set("X-RateLimit-Scope", "shared")
+	headers.Set("X-RateLimit-Reset-After", "1")
+
+	if err := bucket.Release(headers); err != nil {
+		t.Fatalf("Release returned error: %v", err)
+	}
+
+	if bucket.Scope != "shared" {
+		t.Errorf("expected Scope=shared, got %q", bucket.Scope)
+	}
+}
+
+// TestRatelimitBucketHash verifies that two different URLs sharing the same
+// X-RateLimit-Bucket hash end up pointing to the same Bucket object.
+func TestRatelimitBucketHash(t *testing.T) {
+	rl := NewRatelimiter()
+	hash := "abcd1234"
+
+	sendReq := func(endpoint string) *Bucket {
+		bucket := rl.LockBucket(endpoint)
+
+		headers := http.Header(make(map[string][]string))
+		headers.Set("X-RateLimit-Remaining", "4")
+		headers.Set("X-RateLimit-Limit", "5")
+		headers.Set("X-RateLimit-Bucket", hash)
+		headers.Set("X-RateLimit-Reset", fmt.Sprint(float64(time.Now().Add(time.Second*10).UnixNano())/1e9))
+		headers.Set("Date", time.Now().Format(time.RFC850))
+
+		if err := bucket.Release(headers); err != nil {
+			t.Errorf("Release returned error: %v", err)
+		}
+
+		rl.RegisterBucketHash(bucket.Key, bucket.discordBucketID)
+		return bucket
+	}
+
+	sendReq("/channels/123/messages")
+	sendReq("/channels/456/messages")
+
+	b1 := rl.GetBucket("/channels/123/messages")
+	b2 := rl.GetBucket("/channels/456/messages")
+
+	if b1 != b2 {
+		t.Error("expected both URLs to share the same Bucket, but got different pointers")
+	}
+}
+
 func BenchmarkRatelimitSingleEndpoint(b *testing.B) {
 	rl := NewRatelimiter()
 	for i := 0; i < b.N; i++ {
@@ -106,6 +180,7 @@ func sendBenchReq(endpoint string, rl *RateLimiter) {
 	headers := http.Header(make(map[string][]string))
 
 	headers.Set("X-RateLimit-Remaining", "10")
+	headers.Set("X-RateLimit-Limit", "10")
 	headers.Set("X-RateLimit-Reset", fmt.Sprint(float64(time.Now().UnixNano())/1e9))
 	headers.Set("Date", time.Now().Format(time.RFC850))
 

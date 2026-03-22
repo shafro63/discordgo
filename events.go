@@ -22,6 +22,8 @@ type Disconnect struct{}
 type RateLimit struct {
 	*TooManyRequests
 	URL string
+	// Scope is the value of the X-RateLimit-Scope header: "user", "global", or "shared".
+	Scope string
 }
 
 // Event provides a basic initial struct for all websocket events.
