@@ -72,7 +72,7 @@ var (
 							Component: discordgo.TextInput{
 								CustomID:  "suggestions",
 								Style:     discordgo.TextInputParagraph,
-								Required:  false,
+								Required:  new(bool),
 								MaxLength: 2000,
 							},
 						},
