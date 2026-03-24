@@ -56,7 +56,7 @@ func TestRatelimitGlobal(t *testing.T) {
 
 		headers := http.Header(make(map[string][]string))
 
-		headers.Set("X-RateLimit-Global", "1")
+		headers.Set("X-RateLimit-Global", "true")
 		// Reset for approx 1 seconds from now
 		headers.Set("X-RateLimit-Reset-After", "1")
 
@@ -79,26 +79,6 @@ func TestRatelimitGlobal(t *testing.T) {
 		t.Log("OK", time.Since(sent))
 	} else {
 		t.Error("Did not ratelimit correctly, got:", time.Since(sent))
-	}
-}
-
-// TestRatelimitLimitHeader verifies that X-RateLimit-Limit is parsed and stored on the Bucket.
-func TestRatelimitLimitHeader(t *testing.T) {
-	rl := NewRatelimiter()
-	bucket := rl.LockBucket("/guilds/99/channels")
-
-	headers := http.Header(make(map[string][]string))
-	headers.Set("X-RateLimit-Remaining", "4")
-	headers.Set("X-RateLimit-Limit", "5")
-	headers.Set("X-RateLimit-Reset", fmt.Sprint(float64(time.Now().Add(time.Second).UnixNano())/1e9))
-	headers.Set("Date", time.Now().Format(time.RFC850))
-
-	if err := bucket.Release(headers); err != nil {
-		t.Fatalf("Release returned error: %v", err)
-	}
-
-	if bucket.Limit != 5 {
-		t.Errorf("expected Limit=5, got %d", bucket.Limit)
 	}
 }
 

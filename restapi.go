@@ -19,7 +19,6 @@ import (
 	_ "image/jpeg" // For JPEG decoding
 	_ "image/png"  // For PNG decoding
 	"io"
-	"io/ioutil"
 	"log"
 	"net/http"
 	"net/url"
@@ -211,7 +210,7 @@ func (s *Session) RequestWithLockedBucket(method, urlStr, contentType string, b 
 		req.Header.Set("authorization", s.Token)
 	}
 
-	// Discord's API returns a 400 Bad Request is Content-Type is set, but the
+	// Discord's API returns a 400 Bad Request if Content-Type is set, but the
 	// request body is empty.
 	if b != nil {
 		req.Header.Set("Content-Type", contentType)
@@ -237,11 +236,10 @@ func (s *Session) RequestWithLockedBucket(method, urlStr, contentType string, b 
 		bucket.Release(nil)
 		return
 	}
-	receivedAt := time.Now()
 	defer func() {
 		err2 := resp.Body.Close()
 		if s.Debug && err2 != nil {
-			log.Println("error closing resp body")
+			log.Println("error closing resp body", err2)
 		}
 	}()
 
@@ -256,7 +254,7 @@ func (s *Session) RequestWithLockedBucket(method, urlStr, contentType string, b 
 		s.Ratelimiter.RegisterBucketHash(bucket.Key, bucket.discordBucketID)
 	}
 
-	response, err = ioutil.ReadAll(resp.Body)
+	response, err = io.ReadAll(resp.Body)
 	if err != nil {
 		return
 	}
@@ -291,21 +289,15 @@ func (s *Session) RequestWithLockedBucket(method, urlStr, contentType string, b 
 		}
 	case http.StatusTooManyRequests:
 		rl := TooManyRequests{}
-		err = Unmarshal(response, &rl)
+		err = rl.UnmarshalJSON(response)
 		if err != nil {
-			s.log(LogError, "rate limit unmarshal error, %s", err)
+			s.log(LogError, "rate limit unmarshal error, %s, body=%s", err, string(response))
 			return
 		}
 
 		if cfg.ShouldRetryOnRateLimit {
-			s.log(LogInformational, "Rate Limiting %s, retry in %v", urlStr, rl.RetryAfter)
-			s.handleEvent(rateLimitEventType, &RateLimit{TooManyRequests: &rl, URL: urlStr, Scope: resp.Header.Get("X-RateLimit-Scope")})
-
-			// Subtract time already spent processing the response so we don't
-			// overshoot the retry window.
-			if wait := time.Until(receivedAt.Add(rl.RetryAfter)); wait > 0 {
-				time.Sleep(wait)
-			}
+			s.log(LogInformational, "Rate Limit received on %s, retry in %v,  global=%v, code=%d", urlStr, rl.RetryAfter, rl.Global, rl.Code)
+			s.handleEvent(rateLimitEventType, &RateLimit{TooManyRequests: &rl, URL: urlStr, Scope: bucket.Scope, Bucket: bucket.discordBucketID})
 
 			response, err = s.RequestWithLockedBucket(method, urlStr, contentType, b, s.Ratelimiter.LockBucketObject(bucket), sequence, options...)
 		} else {
