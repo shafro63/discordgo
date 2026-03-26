@@ -60,5 +60,9 @@ func New(token string) (s *Session, err error) {
 	s.Identify.Token = token
 	s.Token = token
 
+	s.Ratelimiter.onGlobalRateLimit = func(bucketID string) {
+		s.log(LogWarning, "global rate limit reached (50 req/s), throttling %s", bucketID)
+	}
+
 	return
 }

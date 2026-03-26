@@ -200,7 +200,7 @@ func (s *Session) RequestWithLockedBucket(method, urlStr, contentType string, b 
 
 	req, err := http.NewRequest(method, urlStr, bytes.NewBuffer(b))
 	if err != nil {
-		bucket.Release(nil)
+		bucket.ReleaseEmpty()
 		return
 	}
 
@@ -233,7 +233,7 @@ func (s *Session) RequestWithLockedBucket(method, urlStr, contentType string, b 
 
 	resp, err := cfg.Client.Do(req)
 	if err != nil {
-		bucket.Release(nil)
+		bucket.ReleaseEmpty()
 		return
 	}
 	defer func() {
@@ -243,29 +243,33 @@ func (s *Session) RequestWithLockedBucket(method, urlStr, contentType string, b 
 		}
 	}()
 
-	err = bucket.Release(resp.Header)
-	if err != nil {
-		return
-	}
+	// Parse headers and body together. For 429 responses, ParseRateLimitResponse
+	// also reads the JSON body and makes it the authoritative retry source.
+	// This happens before Release so goroutines unblocked by Release already
+	// see the correct reset time.
+	//
+	// bucket.Release is always called — even on parse error — so that headers
+	// already parsed (Retry-After, BucketHash, Remaining, etc.) are applied
+	// to the bucket and waiting goroutines are unblocked with correct state.
+	data, response, parseErr := ParseRateLimitResponse(resp)
+	bucket.Release(data)
 
-	// Register the Discord bucket hash so future requests to different URLs
-	// sharing the same hash reuse the same Bucket object.
-	if bucket.discordBucketID != "" {
-		s.Ratelimiter.RegisterBucketHash(bucket.Key, bucket.discordBucketID)
-	}
-
-	response, err = io.ReadAll(resp.Body)
-	if err != nil {
-		return
+	if data.BucketHash != "" {
+		s.Ratelimiter.RegisterBucketHash(bucket.originalKey, data.BucketHash)
 	}
 
 	if s.Debug {
-
 		log.Printf("API RESPONSE  STATUS :: %s\n", resp.Status)
 		for k, v := range resp.Header {
 			log.Printf("API RESPONSE  HEADER :: [%s] = %+v\n", k, v)
 		}
-		log.Printf("API RESPONSE    BODY :: [%s]\n\n\n", response)
+		log.Printf("API RESPONSE  BODY :: [%s]\n\n\n", response)
+	}
+
+	if parseErr != nil {
+		s.log(LogError, "rate limit parse error, %v, raw_body=%s", parseErr, response)
+		err = parseErr
+		return
 	}
 
 	switch resp.StatusCode {
@@ -279,29 +283,22 @@ func (s *Session) RequestWithLockedBucket(method, urlStr, contentType string, b 
 	case http.StatusGatewayTimeout:
 		fallthrough
 	case http.StatusBadGateway:
-		// Retry sending request if possible
 		if sequence < cfg.MaxRestRetries {
-
 			s.log(LogInformational, "%s Failed (%s), Retrying...", urlStr, resp.Status)
 			response, err = s.RequestWithLockedBucket(method, urlStr, contentType, b, s.Ratelimiter.LockBucketObject(bucket), sequence+1, options...)
 		} else {
 			err = fmt.Errorf("Exceeded Max retries HTTP %s, %s", resp.Status, response)
 		}
 	case http.StatusTooManyRequests:
-		rl := TooManyRequests{}
-		err = rl.UnmarshalJSON(response)
-		if err != nil {
-			s.log(LogError, "rate limit unmarshal error, %s, body=%s", err, string(response))
-			return
-		}
+		rateLimit := &RateLimit{TooManyRequests: data.TooManyRequests, URL: urlStr, Scope: bucket.Scope, Bucket: bucket.discordBucketID, Cloudflare: data.Cloudflare}
 
 		if cfg.ShouldRetryOnRateLimit {
-			s.log(LogInformational, "Rate Limit received on %s, retry in %v,  global=%v, code=%d", urlStr, rl.RetryAfter, rl.Global, rl.Code)
-			s.handleEvent(rateLimitEventType, &RateLimit{TooManyRequests: &rl, URL: urlStr, Scope: bucket.Scope, Bucket: bucket.discordBucketID})
-
+			s.log(LogInformational, "Rate Limiting %s, retry in %v, scope=%s, code=%d, cloudflare=%v",
+				urlStr, data.TooManyRequests.RetryAfter, bucket.Scope, data.TooManyRequests.Code, data.Cloudflare)
+			s.handleEvent(rateLimitEventType, rateLimit)
 			response, err = s.RequestWithLockedBucket(method, urlStr, contentType, b, s.Ratelimiter.LockBucketObject(bucket), sequence, options...)
 		} else {
-			err = &RateLimitError{&RateLimit{TooManyRequests: &rl, URL: urlStr}}
+			err = &RateLimitError{rateLimit}
 		}
 	case http.StatusUnauthorized:
 		if strings.Index(s.Token, "Bot ") != 0 {

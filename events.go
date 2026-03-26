@@ -24,7 +24,10 @@ type RateLimit struct {
 	URL string
 	// Scope is the value of the X-RateLimit-Scope header: "user", "global", or "shared".
 	Scope string
-	Bucket string // Discord hash for the bucket 
+	Bucket string // Discord hash for the bucket
+	// Cloudflare is true when the 429 comes from Cloudflare (Via header absent)
+	// rather than from Discord's own rate limiter.
+	Cloudflare bool
 }
 
 // Event provides a basic initial struct for all websocket events.
