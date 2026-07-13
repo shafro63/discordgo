@@ -2,10 +2,11 @@
 
 ## DiscordGo Modals Example
 
-This example demonstrates how to utilize DiscordGo to send and process text
-inputs in modals. If you have not read `slash_commands` and `components`
-examples yet it is recommended to do so before proceeding. As this example
-is built using interactions and Slash Commands.
+This example demonstrates how to utilize DiscordGo to send and process the
+components available in modals: text inputs, select menus, radio groups,
+checkbox groups and checkboxes. If you have not read `slash_commands` and
+`components` examples yet it is recommended to do so before proceeding. As
+this example is built using interactions and Slash Commands.
 
 **Join [Discord Gophers](https://discord.gg/0f1SbxBZjYoCtNPP)
 Discord chat channel for support.**

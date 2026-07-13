@@ -27,6 +27,9 @@ const (
 	ContainerComponent             ComponentType = 17
 	LabelComponent                 ComponentType = 18
 	FileUploadComponent            ComponentType = 19
+	RadioGroupComponent            ComponentType = 21
+	CheckboxGroupComponent         ComponentType = 22
+	CheckboxComponent              ComponentType = 23
 )
 
 // MessageComponent is a base interface for all message components.
@@ -77,6 +80,12 @@ func (umc *unmarshalableMessageComponent) UnmarshalJSON(src []byte) error {
 		umc.MessageComponent = &Label{}
 	case FileUploadComponent:
 		umc.MessageComponent = &FileUpload{}
+	case RadioGroupComponent:
+		umc.MessageComponent = &RadioGroup{}
+	case CheckboxGroupComponent:
+		umc.MessageComponent = &CheckboxGroup{}
+	case CheckboxComponent:
+		umc.MessageComponent = &Checkbox{}
 	default:
 		return fmt.Errorf("unknown component type: %d", v.Type)
 	}
@@ -398,7 +407,11 @@ func (s Section) MarshalJSON() ([]byte, error) {
 }
 
 // TextDisplay is a top-level component that allows you to add markdown-formatted text to the message.
+// NOTE: requires MessageFlagsIsComponentsV2 to be set on the message.
 type TextDisplay struct {
+	// Unique identifier for the component; auto populated through increment if not provided.
+	ID int `json:"id,omitempty"`
+	// Text that will be displayed similar to a message.
 	Content string `json:"content"`
 }
 
@@ -670,6 +683,143 @@ func (f FileUpload) MarshalJSON() ([]byte, error) {
 	}{
 		fileUpload: fileUpload(f),
 		Type:       f.Type(),
+	})
+}
+
+// RadioGroupOption represents an option of a RadioGroup component.
+type RadioGroupOption struct {
+	// Developer-defined value of the option; max 100 characters.
+	Value string `json:"value"`
+	// User-facing label of the option; max 100 characters.
+	Label string `json:"label"`
+	// Optional description for the option; max 100 characters.
+	Description string `json:"description,omitempty"`
+	// Determines whenever option is selected by default or not.
+	Default bool `json:"default,omitempty"`
+}
+
+// RadioGroup is an interactive component for selecting exactly one option from a defined list.
+// RadioGroups are available on modals. They must be placed inside a Label.
+type RadioGroup struct {
+	// Unique identifier for the component; auto populated through increment if not provided.
+	ID int `json:"id,omitempty"`
+	// Developer-defined identifier for the input; 1-100 characters.
+	CustomID string `json:"custom_id"`
+	// List of options to show.
+	// NOTE: minimum of 2, maximum of 10.
+	Options []RadioGroupOption `json:"options"`
+	// Whether a selection is required to submit the modal.
+	// Default to true.
+	Required *bool `json:"required,omitempty"`
+
+	// Value of the selected option, only populated when receiving an interaction response; do not fill this manually.
+	// NOTE: nil when no option was selected.
+	Value *string `json:"value,omitempty"`
+}
+
+// Type is a method to get the type of a component.
+func (RadioGroup) Type() ComponentType {
+	return RadioGroupComponent
+}
+
+// MarshalJSON is a method for marshaling RadioGroup to a JSON object.
+func (r RadioGroup) MarshalJSON() ([]byte, error) {
+	type radioGroup RadioGroup
+
+	return Marshal(struct {
+		radioGroup
+		Type ComponentType `json:"type"`
+	}{
+		radioGroup: radioGroup(r),
+		Type:       r.Type(),
+	})
+}
+
+// CheckboxGroupOption represents an option of a CheckboxGroup component.
+type CheckboxGroupOption struct {
+	// Developer-defined value of the option; max 100 characters.
+	Value string `json:"value"`
+	// User-facing label of the option; max 100 characters.
+	Label string `json:"label"`
+	// Optional description for the option; max 100 characters.
+	Description string `json:"description,omitempty"`
+	// Determines whenever option is selected by default or not.
+	Default bool `json:"default,omitempty"`
+}
+
+// CheckboxGroup is an interactive component for selecting one or many options via checkboxes.
+// CheckboxGroups are available on modals. They must be placed inside a Label.
+type CheckboxGroup struct {
+	// Unique identifier for the component; auto populated through increment if not provided.
+	ID int `json:"id,omitempty"`
+	// Developer-defined identifier for the input; 1-100 characters.
+	CustomID string `json:"custom_id"`
+	// List of options to show.
+	// NOTE: minimum of 1, maximum of 10.
+	Options []CheckboxGroupOption `json:"options"`
+	// Minimum number of items that must be chosen; min 0, max 10.
+	// Default to 1.
+	// NOTE: must be either omitted or at least 1 if Required is omitted or true.
+	MinValues *int `json:"min_values,omitempty"`
+	// Maximum number of items that can be chosen; min 1, max 10.
+	// Default to the number of options.
+	MaxValues int `json:"max_values,omitempty"`
+	// Whether selecting within the group is required.
+	// Default to true.
+	Required *bool `json:"required,omitempty"`
+
+	// Values of the selected options, only populated when receiving an interaction response; do not fill this manually.
+	Values []string `json:"values,omitempty"`
+}
+
+// Type is a method to get the type of a component.
+func (CheckboxGroup) Type() ComponentType {
+	return CheckboxGroupComponent
+}
+
+// MarshalJSON is a method for marshaling CheckboxGroup to a JSON object.
+func (c CheckboxGroup) MarshalJSON() ([]byte, error) {
+	type checkboxGroup CheckboxGroup
+
+	return Marshal(struct {
+		checkboxGroup
+		Type ComponentType `json:"type"`
+	}{
+		checkboxGroup: checkboxGroup(c),
+		Type:          c.Type(),
+	})
+}
+
+// Checkbox is a single interactive component for simple yes/no style questions.
+// Checkboxes are available on modals. They must be placed inside a Label.
+// NOTE: a checkbox cannot be made required; use a CheckboxGroup with a single option instead.
+type Checkbox struct {
+	// Unique identifier for the component; auto populated through increment if not provided.
+	ID int `json:"id,omitempty"`
+	// Developer-defined identifier for the input; 1-100 characters.
+	CustomID string `json:"custom_id"`
+	// Whether the checkbox is selected by default.
+	Default bool `json:"default,omitempty"`
+
+	// State of the checkbox, only populated when receiving an interaction response; do not fill this manually.
+	Value *bool `json:"value,omitempty"`
+}
+
+// Type is a method to get the type of a component.
+func (Checkbox) Type() ComponentType {
+	return CheckboxComponent
+}
+
+// MarshalJSON is a method for marshaling Checkbox to a JSON object.
+func (c Checkbox) MarshalJSON() ([]byte, error) {
+	type checkbox Checkbox
+
+	return Marshal(struct {
+		checkbox
+		Type ComponentType `json:"type"`
+	}{
+		checkbox: checkbox(c),
+		Type:     c.Type(),
 	})
 }
 

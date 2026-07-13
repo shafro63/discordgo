@@ -67,6 +67,40 @@ var (
 							},
 						},
 						discordgo.Label{
+							Label:       "Which component do you like the most?",
+							Description: "Pick exactly one",
+							Component: discordgo.RadioGroup{
+								CustomID: "favorite",
+								Options: []discordgo.RadioGroupOption{
+									{Label: "Buttons", Value: "buttons"},
+									{Label: "Select menus", Value: "select_menus"},
+									{Label: "Text inputs", Value: "text_inputs", Default: true},
+								},
+							},
+						},
+						discordgo.Label{
+							Label:       "What do you use modals for?",
+							Description: "Choose all that apply",
+							Component: discordgo.CheckboxGroup{
+								CustomID: "usages",
+								Options: []discordgo.CheckboxGroupOption{
+									{Label: "Moderation", Value: "moderation"},
+									{Label: "Forms and surveys", Value: "forms"},
+									{Label: "Games", Value: "games", Description: "Character creation, settings, etc."},
+								},
+								// Optional group: allow submitting without choosing anything.
+								MinValues: new(int),
+								Required:  new(bool),
+							},
+						},
+						discordgo.Label{
+							Label: "Would you recommend modals to a friend?",
+							Component: discordgo.Checkbox{
+								CustomID: "recommend",
+								Default:  true,
+							},
+						},
+						discordgo.Label{
 							Label:       "What would you suggest to improve them?",
 							Description: "Please provide as much info as possible!",
 							Component: discordgo.TextInput{
@@ -115,11 +149,33 @@ func main() {
 			}
 
 			userid := strings.Split(data.CustomID, "_")[2]
+
+			// Radio groups return a single value, which is nil when the group is optional and left empty.
+			favorite := "nothing"
+			if v := data.Components[1].(*discordgo.Label).Component.(*discordgo.RadioGroup).Value; v != nil {
+				favorite = *v
+			}
+
+			// Checkbox groups return every selected value, and an empty list when nothing is selected.
+			usages := data.Components[2].(*discordgo.Label).Component.(*discordgo.CheckboxGroup).Values
+			if len(usages) == 0 {
+				usages = []string{"nothing"}
+			}
+
+			// Checkboxes return their state, which is nil only if the component was not submitted.
+			recommend := false
+			if v := data.Components[3].(*discordgo.Label).Component.(*discordgo.Checkbox).Value; v != nil {
+				recommend = *v
+			}
+
 			_, err = s.ChannelMessageSend(*ResultsChannel, fmt.Sprintf(
-				"Feedback received. From <@%s>\n\n**Rating**:\n%s\n\n**Suggestions**:\n%s",
+				"Feedback received. From <@%s>\n\n**Rating**:\n%s\n\n**Favorite component**:\n%s\n\n**Used for**:\n%s\n\n**Recommends modals**:\n%t\n\n**Suggestions**:\n%s",
 				userid,
 				data.Components[0].(*discordgo.Label).Component.(*discordgo.SelectMenu).Values[0],
-				data.Components[1].(*discordgo.Label).Component.(*discordgo.TextInput).Value,
+				favorite,
+				strings.Join(usages, ", "),
+				recommend,
+				data.Components[4].(*discordgo.Label).Component.(*discordgo.TextInput).Value,
 			))
 			if err != nil {
 				panic(err)
